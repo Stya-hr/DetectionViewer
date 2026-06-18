@@ -7,100 +7,269 @@
     <x>0</x>
     <y>0</y>
     <width>420</width>
-    <height>564</height>
+    <height>760</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
-   <item>
-    <widget class="ctkCollapsibleButton" name="inputsCollapsibleButton">
-     <property name="text">
-      <string>Inputs</string>
-     </property>
-     <layout class="QFormLayout" name="inputsFormLayout">
-      <item row="0" column="0">
-       <widget class="QLabel" name="inputVolumeLabel">
+  <item>
+   <widget class="ctkCollapsibleButton" name="datasetCollapsibleButton">
+    <property name="text">
+     <string>Dataset</string>
+    </property>
+    <layout class="QVBoxLayout" name="datasetLayout">
+     <item>
+      <layout class="QHBoxLayout" name="datasetRootLayout">
+       <item>
+        <widget class="QLabel" name="datasetRootLabel">
+         <property name="text">
+          <string>Root:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="datasetRootLineEdit">
+         <property name="toolTip">
+         <string>Dataset root containing case directories with detection.json files.</string>
+         </property>
+         <property name="placeholderText">
+          <string>Select dataset root</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="browseDatasetButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Browse for the dataset root directory.</string>
+         </property>
+         <property name="text">
+          <string>Browse</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="scanDatasetButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Force rescan the dataset root for detection.json files.</string>
+         </property>
+         <property name="text">
+          <string>Rescan</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="datasetFilterLayout">
+       <item>
+        <widget class="QLabel" name="caseFilterLabel">
+         <property name="text">
+          <string>Case:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="caseFilterLineEdit">
+         <property name="toolTip">
+          <string>Filter dataset cases by case name.</string>
+         </property>
+         <property name="placeholderText">
+          <string>Filter case name</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="doneFilterLabel">
+         <property name="text">
+          <string>Done:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="doneFilterComboBox">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>96</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="toolTip">
+          <string>Filter dataset cases by done state.</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="datasetNavigationLayout">
+       <item>
+        <widget class="QPushButton" name="previousCaseButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Load the previous dataset case.</string>
+         </property>
+         <property name="text">
+          <string>Prev</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="nextCaseButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Load the next dataset case.</string>
+         </property>
+         <property name="text">
+          <string>Next</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="nextNotDoneCaseButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Load the next dataset case that is not marked done.</string>
+         </property>
+         <property name="text">
+          <string>Next Not Done</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="datasetNavigationSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="toggleDoneButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Toggle the current dataset case done state in the dataset index.</string>
+         </property>
+         <property name="text">
+          <string>Toggle Done</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QLabel" name="currentCaseLabel">
+       <property name="text">
+        <string>Current: none | Annotation: none</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QTableWidget" name="datasetCaseTable">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>150</height>
+        </size>
+       </property>
+       <property name="editTriggers">
+        <set>QAbstractItemView::NoEditTriggers</set>
+       </property>
+       <property name="selectionBehavior">
+        <enum>QAbstractItemView::SelectRows</enum>
+       </property>
+       <property name="alternatingRowColors">
+        <bool>true</bool>
+       </property>
+       <property name="rowCount">
+        <number>0</number>
+       </property>
+       <property name="columnCount">
+        <number>5</number>
+       </property>
+       <attribute name="horizontalHeaderStretchLastSection">
+        <bool>true</bool>
+       </attribute>
+       <column>
         <property name="text">
-         <string>Input volume:</string>
+         <string>Done</string>
         </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <layout class="QHBoxLayout" name="inputVolumeLayout">
-        <item>
-         <widget class="qMRMLNodeComboBox" name="inputSelector">
-          <property name="toolTip">
-           <string>Select the CT volume that the detections belong to.</string>
-          </property>
-          <property name="nodeTypes">
-           <stringlist notr="true">
-            <string>vtkMRMLScalarVolumeNode</string>
-           </stringlist>
-          </property>
-          <property name="showChildNodeTypes">
-           <bool>false</bool>
-          </property>
-          <property name="noneEnabled">
-           <bool>true</bool>
-          </property>
-          <property name="addEnabled">
-           <bool>false</bool>
-          </property>
-          <property name="removeEnabled">
-           <bool>false</bool>
-          </property>
-          <property name="SlicerParameterName" stdset="0">
-           <string>inputVolume</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="loadVolumeButton">
-          <property name="toolTip">
-           <string>Load an image volume from disk.</string>
-          </property>
-          <property name="text">
-           <string>Load Volume</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="detectionPathLabel">
+       </column>
+       <column>
         <property name="text">
-         <string>Detection JSON:</string>
+         <string>Case</string>
         </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <layout class="QHBoxLayout" name="detectionPathLayout">
-        <item>
-         <widget class="QLineEdit" name="detectionPathLineEdit">
-          <property name="toolTip">
-           <string>Path to the detection JSON file.</string>
-          </property>
-          <property name="placeholderText">
-           <string>Select detection.json</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="browseDetectionButton">
-          <property name="toolTip">
-           <string>Browse for a detection JSON file.</string>
-          </property>
-          <property name="text">
-           <string>Browse</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="ctkCollapsibleButton" name="displayCollapsibleButton">
+       </column>
+       <column>
+        <property name="text">
+         <string>Monai</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Anno</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Last saved</string>
+        </property>
+       </column>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="datasetStatusLabel">
+       <property name="text">
+        <string>Cases: 0</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </item>
+  <item>
+   <widget class="ctkCollapsibleButton" name="displayCollapsibleButton">
      <property name="text">
       <string>Display</string>
      </property>
@@ -593,7 +762,7 @@
           <string>Annotation label to save.</string>
          </property>
          <property name="text">
-          <string>lesion</string>
+          <string>0</string>
          </property>
         </widget>
        </item>
@@ -709,11 +878,6 @@
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>qMRMLNodeComboBox</class>
-   <extends>QWidget</extends>
-   <header>qMRMLNodeComboBox.h</header>
-  </customwidget>
-  <customwidget>
    <class>qMRMLWidget</class>
    <extends>QWidget</extends>
    <header>qMRMLWidget.h</header>
@@ -721,22 +885,5 @@
   </customwidget>
  </customwidgets>
  <resources/>
- <connections>
-  <connection>
-   <sender>main</sender>
-   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
-   <receiver>inputSelector</receiver>
-   <slot>setMRMLScene(vtkMRMLScene*)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>130</x>
-     <y>15</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>250</x>
-     <y>60</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>

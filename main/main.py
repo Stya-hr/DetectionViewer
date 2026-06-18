@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
 import vtk
@@ -67,6 +68,15 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._observedAnnotationNodeIds = set()
         self._autoRefreshingDetectionBoxes = False
         self._loadedAnnotationPath = None
+        self._inputVolumeNode = None
+        self._detectionPath = ""
+        self._datasetCases = []
+        self._filteredDatasetCaseIndices = []
+        self._currentDatasetCaseIndex = -1
+        self._updatingDatasetCaseTable = False
+        self._loadingDatasetCase = False
+        self._loadedDatasetVolumeNodeId = None
+        self._annotationsDirty = False
         self._sceneClosing = False
 
     def setup(self) -> None:
@@ -83,10 +93,17 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
-        self.ui.loadVolumeButton.connect("clicked(bool)", self.onLoadVolumeButton)
-        self.ui.browseDetectionButton.connect("clicked(bool)", self.onBrowseDetectionButton)
-        self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputVolumeChanged)
-        self.ui.detectionPathLineEdit.connect("textChanged(QString)", self.autoRefreshDetectionBoxes)
+        self.ui.browseDatasetButton.connect("clicked(bool)", self.onBrowseDatasetButton)
+        self.ui.scanDatasetButton.connect("clicked(bool)", self.onScanDatasetButton)
+        self.ui.datasetRootLineEdit.connect("editingFinished()", self.onDatasetRootEditingFinished)
+        self.setupDatasetFilters()
+        self.ui.caseFilterLineEdit.connect("textChanged(QString)", self.onDatasetFilterChanged)
+        self.ui.doneFilterComboBox.connect("currentIndexChanged(int)", self.onDatasetFilterChanged)
+        self.ui.datasetCaseTable.connect("cellClicked(int,int)", self.onDatasetCaseClicked)
+        self.ui.previousCaseButton.connect("clicked(bool)", self.onPreviousCaseButton)
+        self.ui.nextCaseButton.connect("clicked(bool)", self.onNextCaseButton)
+        self.ui.nextNotDoneCaseButton.connect("clicked(bool)", self.onNextNotDoneCaseButton)
+        self.ui.toggleDoneButton.connect("clicked(bool)", self.onToggleDoneButton)
         self.ui.minScoreSpinBox.connect("valueChanged(double)", self.autoRefreshDetectionBoxes)
         self.ui.maxDetectionsSpinBox.connect("valueChanged(int)", self.autoRefreshDetectionBoxes)
         self.ui.detectLpsRadioButton.connect("toggled(bool)", self.autoRefreshDetectionBoxes)
@@ -104,9 +121,11 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.updateAnnotationButton.connect("clicked(bool)", self.onUpdateAnnotationButton)
         self.ui.deleteAnnotationButton.connect("clicked(bool)", self.onDeleteAnnotationButton)
         self.ui.saveAnnotationsButton.connect("clicked(bool)", self.onSaveAnnotationsButton)
+        self.setupDatasetCaseTable()
         self.setupLocateInfoTable()
         self.setupAnnotationInfoTable()
         self.refreshAnnotationOptions()
+        self.updateCurrentCaseSummary()
 
         self.initializeParameterNode()
 
@@ -128,6 +147,8 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onSceneStartClose(self, caller, event) -> None:
         self._sceneClosing = True
         self._observedAnnotationNodeIds.clear()
+        self._loadedDatasetVolumeNodeId = None
+        self._annotationsDirty = False
         self.setParameterNode(None)
 
     def onSceneEndClose(self, caller, event) -> None:
@@ -137,11 +158,6 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def initializeParameterNode(self) -> None:
         self.setParameterNode(self.logic.getParameterNode())
-
-        if not self._parameterNode.inputVolume:
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if firstVolumeNode:
-                self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode: mainParameterNode | None) -> None:
         if self._parameterNode:
@@ -166,81 +182,347 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def _checkCanApply(self, caller=None, event=None) -> None:
         self.autoRefreshDetectionBoxes()
 
-    def onBrowseDetectionButton(self) -> None:
-        startPath = self.ui.detectionPathLineEdit.text.strip()
+    def onBrowseDatasetButton(self) -> None:
+        startPath = self.ui.datasetRootLineEdit.text.strip()
         if not startPath:
             startPath = os.path.expanduser("~")
-        filePath = qt.QFileDialog.getOpenFileName(
+        directoryPath = qt.QFileDialog.getExistingDirectory(
             self.parent,
-            _("Select detection JSON"),
+            _("Select dataset root"),
             startPath,
-            _("JSON files (*.json);;All files (*)"),
         )
-        if isinstance(filePath, tuple):
-            filePath = filePath[0]
-        if filePath:
-            self.ui.detectionPathLineEdit.text = filePath
+        if directoryPath:
+            self.ui.datasetRootLineEdit.text = directoryPath
+            self.loadDatasetRoot(forceScan=False)
 
-    def onLoadVolumeButton(self) -> None:
-        filePath = qt.QFileDialog.getOpenFileName(
-            self.parent,
-            _("Select image volume"),
-            os.path.expanduser("~"),
-            _("Image volumes (*.nii *.nii.gz *.nrrd *.mha *.mhd);;All files (*)"),
-        )
-        if isinstance(filePath, tuple):
-            filePath = filePath[0]
-        if not filePath:
+    def onScanDatasetButton(self) -> None:
+        self.loadDatasetRoot(forceScan=True)
+
+    def onDatasetRootEditingFinished(self) -> None:
+        self.loadDatasetRoot(forceScan=False)
+
+    def loadDatasetRoot(self, forceScan: bool = False) -> None:
+        rootPath = self.ui.datasetRootLineEdit.text.strip()
+        if not rootPath:
+            self.ui.statusLabel.text = _("Select a dataset root first")
+            return
+        if not os.path.isdir(rootPath):
+            self.ui.statusLabel.text = _("Dataset root not found")
             return
 
-        with slicer.util.tryWithErrorDisplay(_("Failed to load image volume."), waitCursor=True):
-            volumeNode = self.logic.loadVolume(filePath)
-            self._parameterNode.inputVolume = volumeNode
-            self.ui.inputSelector.setCurrentNode(volumeNode)
-            detectionPath = self.logic.findDetectionJsonNextToVolume(filePath)
-            if detectionPath:
-                self.ui.detectionPathLineEdit.text = detectionPath
+        actionText = _("scan dataset") if forceScan else _("load dataset")
+        with slicer.util.tryWithErrorDisplay(_("Failed to {0}.").format(actionText), waitCursor=True):
+            if forceScan:
+                datasetCases = self.logic.scanDataset(rootPath)
+                statusText = _("Scanned {0} dataset cases").format(len(datasetCases))
             else:
-                self.ui.detectionPathLineEdit.text = ""
-                self.ui.statusLabel.text = _("Loaded volume; no detection JSON found in the same directory")
-                self.autoRefreshDetectionBoxes()
+                datasetCases = self.logic.loadDatasetFromIndex(rootPath)
+                if datasetCases:
+                    statusText = _("Loaded {0} dataset cases from index").format(len(datasetCases))
+                else:
+                    datasetCases = self.logic.scanDataset(rootPath)
+                    statusText = _("No usable dataset index found; scanned {0} cases").format(len(datasetCases))
+            self._datasetCases = datasetCases
+            self._currentDatasetCaseIndex = -1
+            self.refreshDatasetCaseTable()
+            self.updateCurrentCaseSummary()
+            self.ui.statusLabel.text = statusText
 
-    def onInputVolumeChanged(self, currentNode=None) -> None:
-        if self._autoRefreshingDetectionBoxes or self._sceneClosing:
-            return
+    def setupDatasetFilters(self) -> None:
+        self.ui.doneFilterComboBox.clear()
+        self.ui.doneFilterComboBox.addItem(_("All"))
+        self.ui.doneFilterComboBox.addItem(_("Not Done"))
+        self.ui.doneFilterComboBox.addItem(_("Done"))
 
-        inputVolume = self.ui.inputSelector.currentNode()
-        if not inputVolume:
-            self.ui.detectionPathLineEdit.text = ""
-            self.autoRefreshDetectionBoxes()
-            return
+    def onDatasetFilterChanged(self, caller=None) -> None:
+        self.refreshDatasetCaseTable()
 
-        detectionPath = self.logic.findDetectionJsonForVolumeNode(inputVolume)
-        if detectionPath:
-            if self.ui.detectionPathLineEdit.text == detectionPath:
-                self.autoRefreshDetectionBoxes()
-            else:
-                self.ui.detectionPathLineEdit.text = detectionPath
+    def filteredDatasetCaseIndices(self) -> list[int]:
+        caseText = self.ui.caseFilterLineEdit.text.strip().lower()
+        doneFilterIndex = self.ui.doneFilterComboBox.currentIndex
+        filteredIndices = []
+        for caseIndex, case in enumerate(self._datasetCases):
+            caseId = str(case.get("case_id", ""))
+            if caseText and caseText not in caseId.lower():
+                continue
+            caseDone = bool(case.get("done", False))
+            if doneFilterIndex == 2 and not caseDone:
+                continue
+            if doneFilterIndex == 1 and caseDone:
+                continue
+            filteredIndices.append(caseIndex)
+        return filteredIndices
+
+    def updateDatasetStatusLabel(self) -> None:
+        totalCount = len(self._datasetCases)
+        visibleCount = len(self._filteredDatasetCaseIndices)
+        if visibleCount == totalCount:
+            self.ui.datasetStatusLabel.text = _("Cases: {0}").format(totalCount)
         else:
-            self.ui.detectionPathLineEdit.text = ""
+            self.ui.datasetStatusLabel.text = _("Cases: {0}/{1}").format(visibleCount, totalCount)
+
+    def setupDatasetCaseTable(self) -> None:
+        table = self.ui.datasetCaseTable
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Done", "Case", "Monai", "Anno", "Last saved"])
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setEditTriggers(qt.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
+        table.setSelectionMode(qt.QAbstractItemView.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.setColumnWidth(0, 56)
+        table.setColumnWidth(1, 150)
+        table.setColumnWidth(2, 48)
+        table.setColumnWidth(3, 48)
+        table.setColumnWidth(4, 140)
+
+    def refreshDatasetCaseTable(self) -> None:
+        table = self.ui.datasetCaseTable
+        self._updatingDatasetCaseTable = True
+        try:
+            self._filteredDatasetCaseIndices = self.filteredDatasetCaseIndices()
+            table.setRowCount(len(self._filteredDatasetCaseIndices))
+            selectedRow = -1
+            for rowIndex, caseIndex in enumerate(self._filteredDatasetCaseIndices):
+                case = self._datasetCases[caseIndex]
+                values = [
+                    "✓" if case.get("done", False) else "✗",
+                    case.get("case_id", ""),
+                    str(case.get("raw_count", 0)),
+                    str(case.get("annotation_count", 0)),
+                    case.get("last_saved", ""),
+                ]
+                for columnIndex, value in enumerate(values):
+                    item = qt.QTableWidgetItem(str(value))
+                    if columnIndex == 0:
+                        item.setTextAlignment(qt.Qt.AlignCenter)
+                    table.setItem(rowIndex, columnIndex, item)
+                if caseIndex == self._currentDatasetCaseIndex:
+                    selectedRow = rowIndex
+            if selectedRow >= 0:
+                table.selectRow(selectedRow)
+            else:
+                table.clearSelection()
+            self.updateDatasetStatusLabel()
+        finally:
+            self._updatingDatasetCaseTable = False
+
+    def onDatasetCaseClicked(self, row: int, column: int) -> None:
+        if self._updatingDatasetCaseTable:
+            return
+        if row < 0 or row >= len(self._filteredDatasetCaseIndices):
+            return
+        self.loadDatasetCase(self._filteredDatasetCaseIndices[row])
+
+    def currentFilteredDatasetRow(self) -> int:
+        try:
+            return self._filteredDatasetCaseIndices.index(self._currentDatasetCaseIndex)
+        except ValueError:
+            return -1
+
+    def onPreviousCaseButton(self) -> None:
+        if not self._datasetCases:
+            self.ui.statusLabel.text = _("Scan a dataset first")
+            return
+        if not self._filteredDatasetCaseIndices:
+            self.ui.statusLabel.text = _("No cases match the current filter")
+            return
+        currentRow = self.currentFilteredDatasetRow()
+        nextRow = len(self._filteredDatasetCaseIndices) - 1 if currentRow <= 0 else currentRow - 1
+        self.loadDatasetCase(self._filteredDatasetCaseIndices[nextRow])
+
+    def onNextCaseButton(self) -> None:
+        if not self._datasetCases:
+            self.ui.statusLabel.text = _("Scan a dataset first")
+            return
+        if not self._filteredDatasetCaseIndices:
+            self.ui.statusLabel.text = _("No cases match the current filter")
+            return
+        currentRow = self.currentFilteredDatasetRow()
+        nextRow = 0 if currentRow < 0 or currentRow >= len(self._filteredDatasetCaseIndices) - 1 else currentRow + 1
+        self.loadDatasetCase(self._filteredDatasetCaseIndices[nextRow])
+
+    def onNextNotDoneCaseButton(self) -> None:
+        if not self._datasetCases:
+            self.ui.statusLabel.text = _("Scan a dataset first")
+            return
+        if not self._filteredDatasetCaseIndices:
+            self.ui.statusLabel.text = _("No cases match the current filter")
+            return
+        currentRow = self.currentFilteredDatasetRow()
+        startRow = currentRow if currentRow >= 0 else -1
+        for offset in range(1, len(self._filteredDatasetCaseIndices) + 1):
+            candidateRow = (startRow + offset) % len(self._filteredDatasetCaseIndices)
+            candidateIndex = self._filteredDatasetCaseIndices[candidateRow]
+            if not self._datasetCases[candidateIndex].get("done", False):
+                self.loadDatasetCase(candidateIndex)
+                return
+        self.ui.statusLabel.text = _("All visible cases are done")
+
+    def onToggleDoneButton(self) -> None:
+        if not self.currentDatasetCase():
+            self.ui.statusLabel.text = _("Load a dataset case first")
+            return
+        case = self.currentDatasetCase()
+        done = not case.get("done", False)
+        self.setCurrentDatasetCaseDone(done)
+        self.ui.statusLabel.text = _("Current case marked done") if done else _("Current case marked not done")
+
+    def currentDatasetCase(self) -> dict[str, Any] | None:
+        if 0 <= self._currentDatasetCaseIndex < len(self._datasetCases):
+            return self._datasetCases[self._currentDatasetCaseIndex]
+        return None
+
+    def loadDatasetCase(self, caseIndex: int) -> None:
+        if caseIndex < 0 or caseIndex >= len(self._datasetCases):
+            return
+        if caseIndex == self._currentDatasetCaseIndex:
+            return
+        if not self.confirmCaseSwitch():
+            return
+
+        case = self._datasetCases[caseIndex]
+        volumePath = case.get("volume_path", "")
+        detectionPath = case.get("detection_path", "")
+        if not os.path.isfile(volumePath):
+            self.ui.statusLabel.text = _("Case volume not found")
+            return
+        if not os.path.isfile(detectionPath):
+            self.ui.statusLabel.text = _("Case detection JSON not found")
+            return
+
+        with slicer.util.tryWithErrorDisplay(_("Failed to load dataset case."), waitCursor=True):
+            self._loadingDatasetCase = True
+            try:
+                self.clearLoadedDatasetCaseNodes()
+                volumeNode = self.logic.loadVolume(volumePath)
+                self._loadedDatasetVolumeNodeId = volumeNode.GetID()
+                self.setInputVolumeNode(volumeNode)
+                self.setDetectionPath(detectionPath)
+                self._loadedAnnotationPath = None
+            finally:
+                self._loadingDatasetCase = False
+
+            self._currentDatasetCaseIndex = caseIndex
+            self.refreshDatasetCaseTable()
             self.autoRefreshDetectionBoxes()
+            self._annotationsDirty = False
+            self.ui.datasetStatusLabel.text = _("Case {0}/{1}: {2}").format(
+                caseIndex + 1,
+                len(self._datasetCases),
+                case.get("case_id", ""),
+            )
+            self.updateCurrentCaseSummary()
+
+    def confirmCaseSwitch(self) -> bool:
+        if not self._annotationsDirty:
+            return True
+        answer = qt.QMessageBox.question(
+            self.parent,
+            _("Unsaved annotations"),
+            _("Save annotations before switching cases?"),
+            qt.QMessageBox.Save | qt.QMessageBox.Discard | qt.QMessageBox.Cancel,
+            qt.QMessageBox.Save,
+        )
+        if answer == qt.QMessageBox.Cancel:
+            return False
+        if answer == qt.QMessageBox.Save:
+            return self.saveCurrentAnnotations() is not None
+        return True
+
+    def clearLoadedDatasetCaseNodes(self) -> None:
+        self.logic.clearDetectionBoxes()
+        self.unobserveAnnotationNodes()
+        self.logic.clearAnnotations()
+        self.refreshAnnotationOptions()
+        self.refreshLocateIndexOptions([])
+        self.clearLocateInfoTable()
+        self.clearAnnotationInfoTable()
+        self._loadedAnnotationPath = None
+        self.setDetectionPath("")
+        self.setInputVolumeNode(None)
+
+        if self._loadedDatasetVolumeNodeId:
+            volumeNode = slicer.mrmlScene.GetNodeByID(self._loadedDatasetVolumeNodeId)
+            if volumeNode is not None:
+                slicer.mrmlScene.RemoveNode(volumeNode)
+            self._loadedDatasetVolumeNodeId = None
+
+    def setCurrentDatasetCaseDone(self, done: bool) -> None:
+        case = self.currentDatasetCase()
+        if case is None:
+            return
+        case["done"] = bool(done)
+        case["annotation_count"] = len(self.logic.annotationNodes())
+        self.logic.updateDatasetCaseDone(
+            self.ui.datasetRootLineEdit.text.strip(),
+            case["case_id"],
+            case["done"],
+            case["annotation_count"],
+        )
+        self.refreshDatasetCaseTable()
+        self.updateCurrentCaseSummary()
+
+    def updateCurrentDatasetCaseAfterSave(self, count: int) -> None:
+        case = self.currentDatasetCase()
+        if case is None:
+            return
+        case["annotation_count"] = count
+        case["last_saved"] = datetime.now().isoformat(timespec="seconds")
+        self.logic.updateDatasetCaseDone(
+            self.ui.datasetRootLineEdit.text.strip(),
+            case["case_id"],
+            case.get("done", False),
+            count,
+            case["last_saved"],
+        )
+        self.refreshDatasetCaseTable()
+        self.updateCurrentCaseSummary()
+
+    def inputVolumeNode(self):
+        return self._inputVolumeNode
+
+    def setInputVolumeNode(self, volumeNode) -> None:
+        self._inputVolumeNode = volumeNode
+        if self._parameterNode and volumeNode is not None:
+            self._parameterNode.inputVolume = volumeNode
+
+    def currentDetectionPath(self) -> str:
+        return self._detectionPath
+
+    def setDetectionPath(self, detectionPath: str) -> None:
+        self._detectionPath = detectionPath or ""
+
+    def updateCurrentCaseSummary(self) -> None:
+        case = self.currentDatasetCase()
+        if case is None:
+            annotationState = "modified" if self._annotationsDirty else "none"
+            self.ui.currentCaseLabel.text = _("Current: none | Annotation: {0}").format(annotationState)
+            return
+        annotationState = "modified" if self._annotationsDirty else "saved"
+        self.ui.currentCaseLabel.text = _("Current: {0} | Done: {1} | Annotation: {2}").format(
+            case.get("case_id", "-"),
+            "✓" if case.get("done", False) else "✗",
+            annotationState,
+        )
 
     def onRefreshDisplayButton(self) -> None:
         self._loadedAnnotationPath = None
         self.autoRefreshDetectionBoxes()
 
     def autoRefreshDetectionBoxes(self, caller=None, event=None) -> None:
-        if self._autoRefreshingDetectionBoxes or self._sceneClosing:
+        if self._autoRefreshingDetectionBoxes or self._sceneClosing or self._loadingDatasetCase:
             return
 
         self._autoRefreshingDetectionBoxes = True
         try:
-            inputVolume = self.ui.inputSelector.currentNode()
-            detectionPath = self.ui.detectionPathLineEdit.text.strip()
+            inputVolume = self.inputVolumeNode()
+            detectionPath = self.currentDetectionPath()
             if inputVolume and (not detectionPath or not os.path.isfile(detectionPath)):
                 detectedPath = self.logic.findDetectionJsonForVolumeNode(inputVolume)
                 if detectedPath:
-                    self.ui.detectionPathLineEdit.text = detectedPath
+                    self.setDetectionPath(detectedPath)
                     detectionPath = detectedPath
 
             if not inputVolume or not os.path.isfile(detectionPath):
@@ -277,6 +559,7 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 annotationNodes = self.logic.loadAnnotationsFromDetectionPath(detectionPath)
                 self._loadedAnnotationPath = os.path.abspath(detectionPath)
                 self.refreshAnnotationOptions(annotationNodes[0] if annotationNodes else None)
+                self._annotationsDirty = False
                 if annotationNodes:
                     self.ui.statusLabel.text = _("Displayed {0} detection boxes; loaded {1} annotations").format(
                         len(createdNodes),
@@ -416,12 +699,13 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         annotationNode = self.logic.createAnnotationFromDetectionNode(detectionNode, self.annotationEditorLabel())
         self.refreshAnnotationOptions(annotationNode)
         self.setAnnotationEditorFromNode(annotationNode)
+        self.markAnnotationsDirty()
         self.ui.statusLabel.text = _("Copied detection {0} to annotations").format(currentText)
 
     def onAddEmptyAnnotationButton(self) -> None:
         center = self.logic.currentSliceCenterRAS()
         if center is None:
-            center = self.logic.volumeCenterRAS(self.ui.inputSelector.currentNode())
+            center = self.logic.volumeCenterRAS(self.inputVolumeNode())
         if center is None:
             self.ui.statusLabel.text = _("No valid view or volume for adding annotation")
             return
@@ -429,6 +713,7 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         annotationNode = self.logic.createEmptyAnnotation(center, self.annotationEditorLabel())
         self.refreshAnnotationOptions(annotationNode)
         self.setAnnotationEditorFromNode(annotationNode)
+        self.markAnnotationsDirty()
         self.ui.statusLabel.text = _("Added empty annotation")
 
     def onUpdateAnnotationButton(self) -> None:
@@ -440,6 +725,7 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic.updateAnnotationNode(annotationNode, self.annotationEditorLabel())
         self.refreshAnnotationOptions(annotationNode)
         self.setAnnotationEditorFromNode(annotationNode)
+        self.markAnnotationsDirty()
         self.ui.statusLabel.text = _("Updated annotation")
 
     def onDeleteAnnotationButton(self) -> None:
@@ -451,13 +737,19 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.unobserveAnnotationNode(annotationNode)
         self.logic.removeAnnotationNode(annotationNode)
         self.refreshAnnotationOptions()
+        self.markAnnotationsDirty()
         self.ui.statusLabel.text = _("Deleted annotation")
 
     def onSaveAnnotationsButton(self) -> None:
-        detectionPath = self.ui.detectionPathLineEdit.text.strip()
+        count = self.saveCurrentAnnotations()
+        if count is not None:
+            self.ui.statusLabel.text = _("Saved {0} annotations to detection JSON").format(count)
+
+    def saveCurrentAnnotations(self) -> int | None:
+        detectionPath = self.currentDetectionPath()
         if not os.path.isfile(detectionPath):
             self.ui.statusLabel.text = _("Select a detection JSON first")
-            return
+            return None
 
         if self.logic.detectionJsonHasAnnotation(detectionPath):
             answer = qt.QMessageBox.question(
@@ -469,16 +761,19 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             )
             if answer != qt.QMessageBox.Yes:
                 self.ui.statusLabel.text = _("Annotation save canceled")
-                return
+                return None
 
         with slicer.util.tryWithErrorDisplay(_("Failed to save annotations."), waitCursor=True):
             count = self.logic.saveAnnotationsToDetectionJson(detectionPath)
             self._loadedAnnotationPath = os.path.abspath(detectionPath)
-            self.ui.statusLabel.text = _("Saved {0} annotations to detection JSON").format(count)
+            self._annotationsDirty = False
+            self.updateCurrentDatasetCaseAfterSave(count)
+            self.updateCurrentCaseSummary()
+            return count
 
     def annotationEditorLabel(self) -> str:
         label = self.ui.annotationLabelLineEdit.text.strip()
-        return label if label else "lesion"
+        return label if label else "0"
 
     def selectedAnnotationNode(self):
         index = self.ui.annotationSelectorComboBox.currentIndex
@@ -534,7 +829,7 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         except Exception:
             logging.debug("Could not observe selected annotation node", exc_info=True)
         try:
-            label = annotationNode.GetAttribute("DetectionViewer.AnnotationLabel") or "lesion"
+            label = annotationNode.GetAttribute("DetectionViewer.AnnotationLabel") or "0"
             self.ui.annotationLabelLineEdit.text = label
             self.setAnnotationInfoRows(self.logic.annotationInfoRows(annotationNode))
         finally:
@@ -545,6 +840,11 @@ class mainWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             return
         self.logic.setSelectedAnnotationHandles(caller)
         self.setAnnotationEditorFromNode(caller)
+        self.markAnnotationsDirty()
+
+    def markAnnotationsDirty(self) -> None:
+        self._annotationsDirty = True
+        self.updateCurrentCaseSummary()
 
     def setupAnnotationInfoTable(self) -> None:
         table = self.ui.annotationInfoTable
@@ -595,6 +895,9 @@ class mainLogic(ScriptedLoadableModuleLogic):
     ANNOTATION_BOX_ATTRIBUTE = "DetectionViewer.AnnotationBox"
     ANNOTATION_LABEL_ATTRIBUTE = "DetectionViewer.AnnotationLabelNode"
     ANNOTATION_LABEL_FOR_ATTRIBUTE = "DetectionViewer.AnnotationLabelFor"
+    DATASET_INDEX_FILE_NAME = ".detection_viewer_index.json"
+    DATASET_INDEX_SCHEMA_VERSION = 2
+    VOLUME_EXTENSIONS = (".nii.gz", ".nii", ".nrrd", ".mha", ".mhd")
 
     def __init__(self) -> None:
         ScriptedLoadableModuleLogic.__init__(self)
@@ -669,6 +972,195 @@ class mainLogic(ScriptedLoadableModuleLogic):
         if not volumePath:
             return None
         return self.findDetectionJsonNextToVolume(volumePath)
+
+    def scanDataset(self, rootPath: str) -> list[dict[str, Any]]:
+        rootPath = os.path.abspath(os.path.expanduser(rootPath))
+        indexData = self.readDatasetIndex(rootPath)
+        storedCases = indexData.get("cases", {})
+        cases = []
+
+        for directoryPath, directoryNames, fileNames in os.walk(rootPath):
+            directoryNames[:] = [
+                directoryName
+                for directoryName in directoryNames
+                if not directoryName.startswith(".")
+            ]
+            if "detection.json" not in fileNames:
+                continue
+
+            detectionPath = os.path.join(directoryPath, "detection.json")
+            caseId = self.caseIdForDetectionPath(rootPath, detectionPath)
+            storedCase = storedCases.get(caseId, {})
+            relativeDirectory = os.path.relpath(directoryPath, rootPath)
+            rawCount = 0
+            annotationCount = 0
+            done = bool(storedCase.get("done", False))
+            lastSaved = storedCase.get("last_saved", "")
+            try:
+                detectionData = self.readDetectionData(detectionPath)
+                rawCount = len(self.detectionsFromData(detectionData, minScore=float("-inf")))
+                annotationCount = len(self.annotationDataFromDetectionData(detectionData))
+            except Exception as exc:
+                logging.warning("Failed to read detection summary for %s: %s", detectionPath, exc)
+
+            volumePath = self.findVolumeNextToDetection(detectionPath)
+            volumeFile = os.path.basename(volumePath) if volumePath else ""
+
+            cases.append(
+                {
+                    "case_id": caseId,
+                    "done": done,
+                    "relative_dir": relativeDirectory,
+                    "detection_file": os.path.basename(detectionPath),
+                    "volume_file": volumeFile,
+                    "volume_path": volumePath or "",
+                    "detection_path": detectionPath,
+                    "raw_count": rawCount,
+                    "annotation_count": annotationCount,
+                    "last_saved": lastSaved,
+                }
+            )
+
+        cases.sort(key=lambda case: case["case_id"])
+        self.writeDatasetIndex(
+            rootPath,
+            {
+                "cases": {
+                    case["case_id"]: {
+                        "done": case.get("done", False),
+                        "relative_dir": case.get("relative_dir", ""),
+                        "detection_file": case.get("detection_file", "detection.json"),
+                        "volume_file": case.get("volume_file", ""),
+                        "raw_count": case.get("raw_count", 0),
+                        "annotation_count": case.get("annotation_count", 0),
+                        "last_saved": case.get("last_saved", ""),
+                    }
+                    for case in cases
+                }
+            },
+        )
+        return cases
+
+    def loadDatasetFromIndex(self, rootPath: str) -> list[dict[str, Any]]:
+        rootPath = os.path.abspath(os.path.expanduser(rootPath))
+        indexData = self.readDatasetIndex(rootPath)
+        cases = []
+        for caseId, caseData in indexData.get("cases", {}).items():
+            relativeDirectory = caseData.get("relative_dir", "")
+            detectionFile = caseData.get("detection_file", "")
+            volumeFile = caseData.get("volume_file", "")
+            if not relativeDirectory or not detectionFile:
+                continue
+            caseDirectory = os.path.normpath(os.path.join(rootPath, relativeDirectory))
+            detectionPath = os.path.join(caseDirectory, detectionFile)
+            volumePath = os.path.join(caseDirectory, volumeFile) if volumeFile else ""
+            cases.append(
+                {
+                    "case_id": str(caseId),
+                    "done": bool(caseData.get("done", False)),
+                    "relative_dir": str(relativeDirectory),
+                    "detection_file": str(detectionFile),
+                    "volume_file": str(volumeFile),
+                    "volume_path": volumePath,
+                    "detection_path": detectionPath,
+                    "raw_count": int(caseData.get("raw_count", 0) or 0),
+                    "annotation_count": int(caseData.get("annotation_count", 0) or 0),
+                    "last_saved": str(caseData.get("last_saved", "") or ""),
+                }
+            )
+        cases.sort(key=lambda case: case["case_id"])
+        return cases
+
+    def datasetIndexPath(self, rootPath: str) -> str:
+        return os.path.join(os.path.abspath(os.path.expanduser(rootPath)), self.DATASET_INDEX_FILE_NAME)
+
+    def readDatasetIndex(self, rootPath: str) -> dict[str, Any]:
+        indexPath = self.datasetIndexPath(rootPath)
+        if not os.path.isfile(indexPath):
+            return self.emptyDatasetIndex()
+        with open(indexPath, "r", encoding="utf-8-sig") as indexFile:
+            indexData = json.load(indexFile)
+        if not isinstance(indexData, dict):
+            return self.emptyDatasetIndex()
+        if indexData.get("schema_version") != self.DATASET_INDEX_SCHEMA_VERSION:
+            return self.emptyDatasetIndex()
+        if not isinstance(indexData.get("cases"), dict):
+            indexData["cases"] = {}
+        return self.sanitizeDatasetIndex(indexData)
+
+    def writeDatasetIndex(self, rootPath: str, indexData: dict[str, Any]) -> None:
+        indexData = self.sanitizeDatasetIndex(indexData)
+        indexData["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        with open(self.datasetIndexPath(rootPath), "w", encoding="utf-8") as indexFile:
+            json.dump(indexData, indexFile, ensure_ascii=False, indent=2)
+
+    def emptyDatasetIndex(self) -> dict[str, Any]:
+        return {"schema_version": self.DATASET_INDEX_SCHEMA_VERSION, "cases": {}}
+
+    def sanitizeDatasetIndex(self, indexData: dict[str, Any]) -> dict[str, Any]:
+        sanitizedCases = {}
+        for caseId, caseData in indexData.get("cases", {}).items():
+            if not isinstance(caseData, dict):
+                continue
+            relativeDirectory = str(caseData.get("relative_dir", "") or "")
+            detectionFile = str(caseData.get("detection_file", "") or "")
+            volumeFile = str(caseData.get("volume_file", "") or "")
+            if not relativeDirectory or not detectionFile:
+                continue
+            sanitizedCase = {
+                "done": bool(caseData.get("done", False)),
+                "relative_dir": relativeDirectory,
+                "detection_file": detectionFile,
+                "volume_file": volumeFile,
+                "raw_count": int(caseData.get("raw_count", 0) or 0),
+                "annotation_count": int(caseData.get("annotation_count", 0) or 0),
+            }
+            lastSaved = caseData.get("last_saved")
+            if lastSaved:
+                sanitizedCase["last_saved"] = str(lastSaved)
+            sanitizedCases[str(caseId)] = sanitizedCase
+        return {"schema_version": self.DATASET_INDEX_SCHEMA_VERSION, "cases": sanitizedCases}
+
+    def updateDatasetCaseDone(
+        self,
+        rootPath: str,
+        caseId: str,
+        done: bool,
+        annotationCount: int,
+        lastSaved: str | None = None,
+    ) -> None:
+        if not rootPath or not os.path.isdir(rootPath):
+            return
+        indexData = self.readDatasetIndex(rootPath)
+        cases = indexData.setdefault("cases", {})
+        caseData = cases.setdefault(caseId, {})
+        caseData["done"] = bool(done)
+        caseData["annotation_count"] = int(annotationCount)
+        if lastSaved is not None:
+            caseData["last_saved"] = lastSaved
+        self.writeDatasetIndex(rootPath, indexData)
+
+    def caseIdForDetectionPath(self, rootPath: str, detectionPath: str) -> str:
+        relativeDirectory = os.path.relpath(os.path.dirname(os.path.abspath(detectionPath)), rootPath)
+        if relativeDirectory == ".":
+            return os.path.splitext(os.path.basename(detectionPath))[0]
+        return relativeDirectory.replace(os.sep, "/")
+
+    def findVolumeNextToDetection(self, detectionPath: str) -> str | None:
+        directoryPath = os.path.dirname(os.path.abspath(detectionPath))
+        if not os.path.isdir(directoryPath):
+            return None
+        candidates = []
+        for fileName in os.listdir(directoryPath):
+            filePath = os.path.join(directoryPath, fileName)
+            if os.path.isfile(filePath) and self.isSupportedVolumeFile(filePath):
+                candidates.append(filePath)
+        candidates.sort()
+        return candidates[0] if candidates else None
+
+    def isSupportedVolumeFile(self, filePath: str) -> bool:
+        lowerPath = filePath.lower()
+        return any(lowerPath.endswith(extension) for extension in self.VOLUME_EXTENSIONS)
 
     def readDetectionData(self, detectionPath: str) -> dict[str, Any]:
         if not os.path.isfile(detectionPath):
@@ -863,7 +1355,7 @@ class mainLogic(ScriptedLoadableModuleLogic):
 
     def createAnnotationFromData(self, annotation: dict[str, Any]):
         bounds = self.annotationBoundsRAS(annotation)
-        label = str(annotation.get("label") or "lesion")
+        label = str(annotation.get("label") or "0")
         annotationNode = self.createAnnotationNode(bounds, label)
 
         if annotation.get("index") is not None:
@@ -1195,7 +1687,7 @@ class mainLogic(ScriptedLoadableModuleLogic):
 
     def annotationDisplayName(self, annotationNode) -> str:
         index = annotationNode.GetAttribute("DetectionViewer.AnnotationIndex") or "-"
-        label = annotationNode.GetAttribute("DetectionViewer.AnnotationLabel") or "lesion"
+        label = annotationNode.GetAttribute("DetectionViewer.AnnotationLabel") or "0"
         sourceIndex = annotationNode.GetAttribute("DetectionViewer.SourceDetectionIndex")
         if sourceIndex:
             return f"A{index} {label} (det {sourceIndex})"
