@@ -2,7 +2,7 @@
 
 DetectionViewer 是一个 3D Slicer 扩展，用于查看 MONAI 等检测模型输出的 detection box，并在此基础上进行人工修正标注。典型流程是：加载数据集，逐例次查看预检测框，将可用 detection 复制为 annotation，调整 annotation 的位置、大小和 label，最后保存回当前例次的 `detection.json`。
 
-![Dataset 页面](docs/images/01-dataset.png)
+![Dataset 页面](docs/figs/screenshot.png)
 
 ## 数据目录结构
 
@@ -41,7 +41,7 @@ dataset-root/any-group/.detection_viewer_index.json
 2. 打开模块列表。
 3. 选择 `DetectionViewer`。
 
-![打开模块](docs/images/02-module-entry.png)
+![打开模块](docs/figs/enter_extension.png)
 
 ## 加载数据集
 
@@ -51,9 +51,9 @@ dataset-root/any-group/.detection_viewer_index.json
 4. 如果没有可用 index，模块会自动扫描根目录下的 `detection.json`。
 5. 当磁盘上的数据发生变化时，点击 `Rescan` 重新扫描。
 
-![加载数据集](docs/images/03-load-dataset.png)
+![加载数据集](docs/figs/load_dataset.png)
 
-例次表格字段说明：
+字段说明：
 
 - `Done`：该例次是否已完成审核。
 - `Case`：例次相对当前 Root 的路径。
@@ -67,7 +67,7 @@ dataset-root/any-group/.detection_viewer_index.json
 
 进入 `View` 页签。
 
-![View 页签](docs/images/04-view-tab.png)
+![View 页签](docs/figs/view_tab.png)
 
 `Detection` 下拉框列出当前显示的 detection 编号。选择某个编号后，模块会高亮该 detection box，并在三个平面视图和 3D 视图中显示。
 
@@ -76,7 +76,7 @@ dataset-root/any-group/.detection_viewer_index.json
 - 黄色：普通参考 detection box。
 - 红色：当前选中的参考 detection box。
 
-常用控件：
+按钮功能：
 
 - `Show boxes`：显示或隐藏参考 detection box，不影响 annotation box。
 - `Auto FOV`：选择 detection 时是否自动调整切片视图范围。
@@ -85,8 +85,6 @@ dataset-root/any-group/.detection_viewer_index.json
 - 空选项：清除当前 detection 高亮。
 
 下方 `Info` 表格显示当前 detection 的只读信息，例如编号、label、中心点、尺寸和坐标。
-
-![选中 Detection](docs/images/05-selected-detection.png)
 
 ## 复制 Detection 到 Annotation
 
@@ -98,28 +96,24 @@ dataset-root/any-group/.detection_viewer_index.json
 
 复制后会创建一个新的 annotation box。原始 detection box 不会被修改。
 
-![复制到 Annotation](docs/images/06-copy-to-annotation.png)
-
 ## 编辑 Annotation
 
 进入 `Annotation` 页签。
 
-![Annotation 页签](docs/images/07-annotation-tab.png)
+![Annotation 页签](docs/figs/annotation_tab.png)
 
 1. 在 `Annotation` 下拉框中选择要编辑的 annotation。
 2. 只有当前选中的 annotation 会显示编辑句柄。
 3. 在平面视图或 3D 视图中拖动句柄，调整 box 的位置和大小。
-4. 在 `Label` 中填写类别，默认值为 `0`。
+4. 在 `Label` 中填写分类标签，默认值为 `0`。
 5. 点击 `Update` 将当前 label 写入选中的 annotation。
 
-Annotation 颜色含义：
+颜色含义：
 
 - 绿色：普通 annotation。
 - 紫色：当前选中的、处于编辑状态的 annotation。
 
 下方 `Info` 表格显示当前 annotation 的只读信息，例如编号、label、中心点、尺寸、边界和来源 detection。
-
-![编辑句柄](docs/images/08-edit-handles.png)
 
 ## 新增或删除 Annotation
 
@@ -135,8 +129,6 @@ Annotation 颜色含义：
 
 1. 在 `Annotation` 下拉框中选择目标 annotation。
 2. 点击 `Delete`。
-
-![新增 Annotation](docs/images/09-add-annotation.png)
 
 ## 保存标注结果
 
@@ -159,10 +151,7 @@ Annotation 颜色含义：
   ]
 }
 ```
-
-保存坐标为 RAS。若当前 `detection.json` 中已经存在 `annotation` 字段，保存时会弹窗确认是否覆盖。
-
-![保存 Annotation](docs/images/10-save.png)
+若当前 `detection.json` 中已经存在 `annotation` 字段，保存时会弹窗确认是否覆盖。
 
 ## 标记例次完成
 
@@ -173,8 +162,6 @@ Annotation 颜色含义：
 3. 点击 `Next Not Done` 跳转到下一个未完成例次。
 
 `Done` 状态保存在 `.detection_viewer_index.json` 中，不写入 `detection.json`。
-
-![标记 Done](docs/images/11-mark-done.png)
 
 ## 标注流程
 
