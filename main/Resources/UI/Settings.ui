@@ -1,0 +1,264 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>Settings</class>
+ <widget class="qMRMLWidget" name="Settings">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>260</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="settingsLayout">
+   <property name="spacing">
+    <number>6</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <layout class="QGridLayout" name="displayGridLayout">
+     <property name="horizontalSpacing">
+      <number>16</number>
+     </property>
+     <property name="verticalSpacing">
+      <number>6</number>
+     </property>
+     <property name="columnStretch">
+      <string>1,1</string>
+     </property>
+     <item row="0" column="0">
+      <layout class="QHBoxLayout" name="minScoreLayout">
+       <property name="stretch">
+        <string>0,1</string>
+       </property>
+       <item>
+        <widget class="QLabel" name="minScoreLabel">
+         <property name="toolTip">
+          <string>Detection score threshold for displayed reference boxes.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>86</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>86</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Min score:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QDoubleSpinBox" name="minScoreSpinBox">
+         <property name="toolTip">
+          <string>Only show reference detections with score greater than or equal to this value.</string>
+         </property>
+         <property name="decimals">
+          <number>3</number>
+         </property>
+         <property name="minimum">
+          <double>0.000000000000000</double>
+         </property>
+         <property name="maximum">
+          <double>1.000000000000000</double>
+         </property>
+         <property name="singleStep">
+          <double>0.050000000000000</double>
+         </property>
+         <property name="value">
+          <double>0.200000000000000</double>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="0" column="1">
+      <layout class="QHBoxLayout" name="maxDetectionsLayout">
+       <property name="stretch">
+        <string>0,1</string>
+       </property>
+       <item>
+        <widget class="QLabel" name="maxDetectionsLabel">
+         <property name="toolTip">
+          <string>Maximum number of reference detection boxes to display.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>86</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>86</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Max boxes:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="maxDetectionsSpinBox">
+         <property name="toolTip">
+          <string>Limit displayed reference detections after score filtering. Set 0 for no limit.</string>
+         </property>
+         <property name="minimum">
+          <number>0</number>
+         </property>
+         <property name="maximum">
+          <number>10000</number>
+         </property>
+         <property name="value">
+          <number>15</number>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="1" column="0">
+      <layout class="QHBoxLayout" name="detectCoordinateRowLayout">
+       <property name="stretch">
+        <string>0,1</string>
+       </property>
+       <item>
+        <widget class="QLabel" name="detectCoordinateLabel">
+         <property name="toolTip">
+          <string>Coordinate system used by raw detection boxes in detection.json.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>86</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>86</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Coordinates:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="detectCoordinateLayout">
+         <property name="spacing">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="QRadioButton" name="detectLpsRadioButton">
+           <property name="toolTip">
+            <string>Raw detection coordinates are LPS and will be converted to Slicer RAS for display.</string>
+           </property>
+           <property name="text">
+            <string>LPS</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QRadioButton" name="detectRasRadioButton">
+           <property name="toolTip">
+            <string>Raw detection coordinates are already Slicer RAS and will be used directly.</string>
+           </property>
+           <property name="text">
+            <string>RAS</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </item>
+     <item row="1" column="1">
+      <layout class="QHBoxLayout" name="refreshDisplayLayout">
+       <property name="stretch">
+        <string>0,1</string>
+       </property>
+       <item>
+        <widget class="QLabel" name="refreshDisplayLabel">
+         <property name="toolTip">
+          <string>Reload reference detections and annotations for the current case.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>86</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>86</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Refresh:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="refreshDisplayButton">
+         <property name="toolTip">
+          <string>Reload the current detection.json, refresh reference boxes, and reload saved annotations.</string>
+         </property>
+         <property name="text">
+          <string>Refresh</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <spacer name="settingsVerticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>qMRMLWidget</class>
+   <extends>QWidget</extends>
+   <header>qMRMLWidget.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
+</ui>
